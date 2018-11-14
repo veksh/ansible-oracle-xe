@@ -10,14 +10,6 @@
     groups: ["trusted"]
     system: true
 
-- name: (sysconf) install required packages
-  zypper:
-    name: "{{ item }}"
-    state: installed
-  with_items:
-    # - orarun
-    - rlwrap
-
 # depends on "ypbind" by default
 - name: (sysconf) fix oracle init script
   lineinfile:
@@ -71,15 +63,6 @@
     backrefs: true
   with_dict: "{{ oracle_grub_params }}"
 
-- name: (sysconf) configure firewall
-  template:
-    src:   "oracle_fw.j2"
-    dest:  "{{ fw_include_path }}/oracle.rules"
-    owner: root
-    group: wheel
-    mode:  0644
-  notify: reload firewall rules
-
 - name: (sysconf) add users to dba group
   user:
     name:   "{{ item }}"
@@ -104,15 +87,3 @@
     path: "/apps/oracle/base"
     src:  "/u01/app/oracle"
     state: link
-
-- name: (sysconf) add exclusions to afick
-  blockinfile:
-    dest: /usr/local/etc/afick.conf
-    insertafter: EOF
-    marker: "## {mark} oracle (ansible managed)"
-    content: |
-      # rdbms
-      {{ oracle_base }}/product           CHECK_FILES
-      {{ oracle_home }}/dbs               CHECK_DIR
-      {{ oracle_home }}/dbs/hc_XE.dat     CHECK_STATE
-      {{ oracle_home }}/dbs/spfileXE.ora  CHECK_STATE

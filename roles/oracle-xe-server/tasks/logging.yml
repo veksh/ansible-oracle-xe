@@ -1,6 +1,6 @@
 # change perms on log dirs and files
 
-# traces are oracle:oinstall ug+r, so changed always: suppress "changed"
+# traces are oracle:dba ug+r, so changed always: suppress "changed"
 - name: (logging) change log dir ownership (recursive)
   file:
     path:   "{{ oracle_base }}/diag"
@@ -9,40 +9,6 @@
     state:  "directory"
     recurse: true
   changed_when: false
-
-# also creates symlink and tweaks perms a bit
-- name: (logging) install alertmon
-  zypper:
-    name: "oracle-alertmon"
-    state: installed
-  when: oracle_alertmon_install
-
-# sles "oracle" installed as a side effect of alertmon install
-- name: (logging) disable SLES "oracle" script startup
-  service:
-    name: "oracle"
-    enabled: false
-  when: oracle_alertmon_install
-
-- name: (logging) configure alertmon params
-  template:
-    src:   "alertmon.macros.re.j2"
-    dest:  "/usr/local/etc/alertmon.macros.re"
-    owner: "root"
-    group: "{{ oracle_group }}"
-  when: oracle_alertmon_install
-
-- name: (logging) configure alertmon mail destination
-  lineinfile:
-    dest:   /etc/aliases
-    regexp: "^oracle-admins: "
-    line:    "oracle-admins: {{ oracle_alertmon_rcpt }}"
-  register: alias_edit_res
-  when: oracle_alertmon_install
-
-- name: (logging) rebuild aliases database
-  command: postalias /etc/aliases
-  when: oracle_alertmon_install and alias_edit_res.changed
 
 - name: (logging) make alert.log symlink
   file:
@@ -60,13 +26,6 @@
     - "{{ oracle_base }}/diag/rdbms/xe"
     - "{{ oracle_base }}/diag/rdbms/xe/XE"
     - "{{ oracle_base }}/diag/rdbms/xe/XE/trace"
-
-- name: (logging) enable alertmon startup
-  service:
-    name: alertmon
-    enabled: true
-    state: "{{ oracle_alertmon_start | ternary('started', omit) }}"
-  when: oracle_alertmon_install
 
 - name: (logging) copy log trimmig script
   copy:
