@@ -1,0 +1,59 @@
+--
+## oracle vars
+oracle_listener_iface: eth1
+oracle_host_name: "orepl-xe.example-domain.com"
+oracle_external_alias: "orepl-xe"
+oracle_db_clients:
+  - 10.1.11.0/24
+
+# for tnsnames.ora; usually in group vars
+oracle_servers:
+  orepl-xe: {host: 'orepl-xe.example-domain.com', service: 'XE'}
+
+# passwords better be in vault and skipped from here
+# oracle_pass_vault: {sys: <pass>, ...}
+oracle_users:
+  user_to_add:
+    password: "{{ lookup('password', 'creds/user_to_add' + oracle_passgen_opts) }}"
+    roles:
+      - appholder
+    quotas:
+      users: 2048M
+    grants:
+      create session:
+# better be in vault too
+oracle_password_sys: "{{ lookup('password', 'creds/sys' + oracle_passgen_opts) }}"
+
+## host vars, not used by oracle role
+iface_configs:
+  - iface: eth1
+    name: orepl-xe.example-domain.com
+    ip_cidr: 10.1.53.22/24
+
+do_conf_nrpe: false
+node_exporter_install: true
+
+extra_system_groups:
+  - dba
+extra_system_users:
+  oracle: {group: "dba", groups: "trusted", desc: "oracle user"}
+
+lvm_groups_dict:
+  apps:
+    pvs: /dev/sdb
+    path: /u01/app/oracle
+    owner: oracle
+    group: dba
+    mode: ug+rwx,o+rx
+    def_fs: xfs
+    def_opts: nosuid,noexec,nodev
+    def_owner: oracle
+    def_group: dba
+    def_mode: ug+rwx,o=rx
+    lvs:
+      # not "soft" at "product" but "/": oracle install scripts check for free space in /u01/app
+      ora-apps:  {size:  2G, path: "/u01/app/oracle", opts: "nodev"}
+      ora-diag:  {size:  1G, path: "diag"}
+      ora-data:  {size: 20G, path: "oradata", mode: "u=rwx,g=rx,o-rwx"}
+lvm_groups: "{{ lvm_groups_dict | subdict2list({'lvs': 'name', '_': 'name'}) }}"
+

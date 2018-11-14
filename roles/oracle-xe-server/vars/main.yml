@@ -1,0 +1,50 @@
+---
+# vars file for oracle-server
+
+sqlplus_cmd: "{{ oracle_home }}/bin/sqlplus -S -L / as sysdba"
+
+sqlplus_setup: |
+  whenever sqlerror exit sql.sqlcode
+  set feedback off
+  set pagesize 0
+  set linesize 10000
+
+sqlplus_setup_noerror: |
+  set feedback off
+  set pagesize 0
+  set linesize 10000
+
+oracle_window_groups:
+  - MAINTENANCE_WINDOW_GROUP
+  - ORA\$AT_WGRP_OS
+  - ORA\$AT_WGRP_SA
+  - ORA\$AT_WGRP_SQ
+
+oracle_audit_events:
+  - alter system
+  - create user
+  - alter user
+  - drop user
+  - create role
+  - create external job
+  - create job
+  - create any job
+  - create any library
+  - alter database
+  - audit system
+  - exempt access policy
+  - grant any privilege
+  - grant any role
+  - alter profile
+  - create any procedure
+  - alter any procedure
+  - drop any procedure
+  - create public database link
+  - create public synonym
+  - execute on dbms_fga
+  - execute on dbms_rls
+  - execute on dbms_file_transfer
+  - execute on dbms_scheduler
+  - execute on dbms_job
+  - execute on sys.kupp\$proc
+  - execute on dbms_network_acl_admin

@@ -1,0 +1,3 @@
+# all hosts
+[oracle-xe-servers]
+orepl-xe-vm   ansible_ssh_host=orepl-xe-vm.example-domain.com

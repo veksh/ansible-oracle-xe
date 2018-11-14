@@ -1,0 +1,31 @@
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_HOME=/u01/app/oracle/product/11.2.0/xe
+export ORACLE_SID=XE
+export TNS_ADMIN=$ORACLE_HOME/network/admin
+
+export NLS_LANG=AMERICAN_RUSSIA.UTF8
+export NLS_DATE_FORMAT='DD.MM.RR'
+export SQLPATH=$HOME/sql
+export PATH=$PATH:$ORACLE_HOME/bin/
+alias sqlplus_r='/usr/bin/rlwrap -s 10000 -pcyan sqlplus'
+
+#
+# Login environment variable settings for Oracle
+# The code below is done ONLY if the user is "oracle":
+#
+
+if [ `id -un` == "oracle" ]; then
+
+  LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$ORACLE_HOME/lib:$ORACLE_HOME/ctx/lib
+  export LD_LIBRARY_PATH
+
+  # core dump file size
+  ulimit -c ${MAX_CORE_FILE_SIZE_SHELL:-0} 2>/dev/null
+
+  # max number of processes for user
+  ulimit -u ${PROCESSES_MAX_SHELL:-16384} 2>/dev/null
+
+  # max number of open files for user
+  ulimit -n ${FILE_MAX_SHELL:-65536} 2>/dev/null
+
+fi

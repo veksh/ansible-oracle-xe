@@ -1,0 +1,382 @@
+- name: (dbtune) check that oracle is running
+  shell: "ps -ef | grep xe_pmon | grep -v grep | wc -l"
+  register: pmon_run_res
+  failed_when: "pmon_run_res.stdout != '1'"
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) get first redo log file name
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select member from v\$logfile where rownum = 1;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+  changed_when: false
+  check_mode: false
+
+# if redo is at fast_recovery_area, count DB as untuned
+- name: (dbtune) move redo logs to data dir, extend system ts
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    alter database datafile '{{ oracle_data_dir }}/system.dbf' autoextend on next 100M maxsize 1G;
+    alter database add logfile group 3 ('{{ redo_prefix }}03.log') size {{ redo_size }};
+    alter system switch logfile;
+    alter system checkpoint;
+    alter database drop logfile group 1;
+    alter database add logfile group 1 ('{{ redo_prefix }}01.log') size {{ redo_size }};
+    alter database drop logfile group 2;
+    alter database add logfile group 2 ('{{ redo_prefix }}02.log') size {{ redo_size }};
+    exit
+    SQLEND
+  when: sqlplus_res.stdout.find("fast_recovery_area") != -1
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  vars:
+    redo_prefix: "{{ oracle_data_dir }}/redo"
+    redo_size: 512M
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+
+# really need to bounce db to change audit from NONE and turn off recyclebin
+- name: (dbtune) tune init params, save pfile
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    alter database default tablespace {{ oracle_default_ts }};
+    alter system set recyclebin='off' scope=spfile;
+    alter system set audit_trail='DB' scope=spfile;
+    alter system set shared_servers=0 scope=both;
+    alter system set dispatchers='' scope=both;
+    create pfile='{{ oracle_home }}/dbs/initXE.ora' from spfile;
+    exit
+    SQLEND
+  when: sqlplus_res.changed
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+
+- name: (dbtune) get APEX status
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select status from dba_registry where comp_id = 'APEX';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) remove APEX
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    @{{ oracle_home }}/apex/apxremov.sql
+    exit
+    SQLEND
+  when: sqlplus_res.stdout == 'VALID'
+#  when: sqlplus_res.stdout != 'no rows selected'
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  vars:
+    redo_prefix: "{{ oracle_data_dir }}/redo"
+    redo_size: 512M
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+
+# open anonymous used as flag that no tuning was performed
+- name: (dbtune) get anonymous user status
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select account_status from dba_users where username = 'ANONYMOUS';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) remove extra users, disable XDB listener
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    execute dbms_xdb.sethttpport(0);
+    execute dbms_xdb.setftpport(0);
+    alter user anonymous account lock;
+    drop user hr cascade;
+    exit
+    SQLEND
+  when: sqlplus_res.stdout == 'OPEN'
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+
+# required for weekly BSLN_MAINTAIN_STATS_JOB and not created by default
+- name: (dbtune) get dbsnmp user status
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select to_char(count(*)) num from dba_users where username = 'DBSNMP';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+  changed_when: false
+  check_mode: false
+
+# ignore errors
+- name: (dbtune) drop and recreate dbsnmp user
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup_noerror }}
+    @?/rdbms/admin/catnsnmp.sql 
+    @?/rdbms/admin/catsnmp.sql
+    exit
+    SQLEND
+  when: sqlplus_res.stdout == '0'
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+
+- name: (dbtune) check current password expiration time
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select limit from dba_profiles where profile = 'DEFAULT' and resource_name = 'PASSWORD_LIFE_TIME';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) disable password expiration
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    alter profile DEFAULT limit password_life_time UNLIMITED;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  when: sqlplus_res.stdout != 'UNLIMITED'
+
+- name: (dbtune) check for early night maintenance window
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select to_char(count(*)) from dba_scheduler_windows where window_name = 'EARLY_NIGHT_WINDOW';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_enw_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) create early night maintenance window
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    begin
+      DBMS_SCHEDULER.CREATE_WINDOW(
+        window_name=>'EARLY_NIGHT_WINDOW',
+        resource_plan=>'DEFAULT_MAINTENANCE_PLAN',
+        start_date=>systimestamp at time zone 'ETC/GMT-3',
+        duration=>numtodsinterval(120, 'minute'),
+        repeat_interval=>'FREQ=DAILY;BYHOUR=23;BYMINUTE=30;BYSECOND=0',
+        end_date=>null,
+        window_priority=>'LOW',
+        comments=>'early night window for maintenance tasks');
+
+      DBMS_SCHEDULER.SET_ATTRIBUTE('EARLY_NIGHT_WINDOW', 'SYSTEM', TRUE);
+
+      {% for group in oracle_window_groups %}
+      DBMS_SCHEDULER.ADD_WINDOW_GROUP_MEMBER(
+        group_name=>'{{ group }}',
+        window_list=>'EARLY_NIGHT_WINDOW');
+      DBMS_SCHEDULER.REMOVE_WINDOW_GROUP_MEMBER(
+        group_name=>'{{ group }}',
+        window_list=>'MONDAY_WINDOW,TUESDAY_WINDOW,WEDNESDAY_WINDOW,THURSDAY_WINDOW,FRIDAY_WINDOW,SATURDAY_WINDOW,SUNDAY_WINDOW');
+      {% endfor %}
+
+    end;
+    /
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  when: sqlplus_enw_res.stdout != '1'
+
+- name: (dbtune) check for audit purging task
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select to_char(count(*)) from dba_scheduler_jobs where job_name = 'PURGE_AUDIT_TRAIL';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_aupurge_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) create audit purging task
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    begin
+      DBMS_SCHEDULER.SET_ATTRIBUTE(
+        name => '"SYS"."DAILY_PURGE_SCHEDULE"',
+        attribute => 'repeat_interval',
+        value => 'FREQ=DAILY;BYHOUR=0;BYMINUTE=1;BYSECOND=0');
+
+      DBMS_SCHEDULER.CREATE_PROGRAM(
+        program_name=>'SYS.purge_audit_trail_prog',
+        program_type=>'PLSQL_BLOCK',
+        program_action=>'begin delete from sys.aud\$ where ntimestamp# < sysdate - 7; commit; end;',
+        number_of_arguments=>0,
+        comments=>'purge audit trail',
+        enabled=>TRUE);
+
+      DBMS_SCHEDULER.CREATE_JOB(
+        job_name => 'SYS.PURGE_AUDIT_TRAIL',
+        program_name => 'SYS.PURGE_AUDIT_TRAIL_PROG',
+        schedule_name => 'SYS.DAILY_PURGE_SCHEDULE',
+        job_class => 'DEFAULT_JOB_CLASS',
+        comments => 'prevent audit log from indefinite growth',
+        auto_drop => FALSE,
+        enabled => FALSE);
+      DBMS_SCHEDULER.ENABLE('SYS.PURGE_AUDIT_TRAIL');
+    end;
+    /
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  when: sqlplus_aupurge_res.stdout != '1'
+
+# not completely correct: just "audit not exists" is checked
+- name: (dbtune) check if custom audit is currently enabled
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select to_char(count(*)) from dba_stmt_audit_opts where audit_option = 'NOT EXISTS';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_audit_res
+  changed_when: false
+  check_mode: false
+
+# will not really work until DB is bounced: by default audit_trail = 'NONE'
+- name: (dbtune) customize audit
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    {% for event in oracle_audit_events %}
+    audit {{ event }} by access;
+    {% endfor %}
+    audit session;
+    audit not exists;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  when: sqlplus_audit_res.stdout != '1'
+
+# https://jhdba.wordpress.com/tag/dbms_stats-alter_stats_history_retention/
+- name: (dbtune) check history retention period
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select to_char(dbms_stats.get_stats_history_retention) from dual;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_histret_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbtune) set history retention period, tune stats gathering
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    begin
+      dbms_stats.alter_stats_history_retention({{ oracle_history_retention_days }});
+      dbms_stats.set_global_prefs('method_opt', 'FOR ALL COLUMNS SIZE AUTO');
+      dbms_stats.set_global_prefs('cascade', 'TRUE');
+    end;
+    /
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  when: sqlplus_histret_res.stdout|int != oracle_history_retention_days

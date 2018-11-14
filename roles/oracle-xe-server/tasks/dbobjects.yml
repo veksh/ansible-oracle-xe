@@ -1,0 +1,169 @@
+- name: (dbobjects) get list of roles from DB
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select role from dba_roles;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_roles_res
+  changed_when: false
+  check_mode: false
+
+- name: (dbobjects) create missed roles
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    create role {{ item.key }};
+    {% for grant in (item.value|d([], true)) %}
+    grant {{ grant }} to {{ item.key }};
+    {% endfor %}
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  with_dict: "{{ oracle_roles }}"
+  when: item.key|upper not in sqlplus_roles_res.stdout_lines
+
+- name: (dbobjects) get list of profiles from DB
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select distinct profile from dba_profiles;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_profiles_res
+  changed_when: false
+  check_mode: false
+
+# fake limit cpu_per_call: at least 1 limit is required; usually set anyway :)
+- name: (dbobjects) create missed profiles
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    create profile {{ item.key }} limit cpu_per_call unlimited;
+    {% for limit_name, limit_value in (item.value|d({}, true)).iteritems() %}
+    alter profile {{ item.key }} limit {{ limit_name }} {{ limit_value }};
+    {% endfor %}
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  with_dict: "{{ oracle_profiles }}"
+  when: item.key|upper not in sqlplus_profiles_res.stdout_lines
+
+- name: (dbobjects) get list of users from DB
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select username from dba_users;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_users_res
+  changed_when: false
+  check_mode: false
+
+# assert is too chatty about checked item; hide passwords with no_log
+- name: (dbobjects) make sure missed users have passwords defined
+  assert:
+    that: item.value.password is defined or oracle_pass_vault[item.key] is defined
+  with_dict: "{{ oracle_users }}"
+  when: item.key|upper not in sqlplus_users_res.stdout_lines
+  loop_control:
+    label: "{{ item.key }}"
+  check_mode: false
+  no_log: true
+
+# mb list would be better to order creation and allow grants; does not solve cross-user grants
+# problem though :)
+- name: (dbobjects) create missed users
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    create user {{ item.key }} identified by "{{ item.value.password | default((oracle_pass_vault|d({}))[item.key]) }}";
+    {% if item.value.profile is defined %}
+    alter user {{ item.key }} profile {{ item.value.profile }};
+    {% endif %}
+    {% if item.value.lock is defined and item.value.lock %}
+    alter user {{ item.key }} account lock;
+    {% endif %}
+    {% for role in (item.value.roles|d([], true)) %}
+    grant {{ role }} to {{ item.key }};
+    {% endfor %}
+    {% for right, opt in (item.value.grants|d({}, true)).iteritems() %}
+    grant {{ right }} to {{ item.key }}{{ opt is none | ternary('', ' with ' + opt|string + ' option') }};
+    {% endfor %}
+    {% for tsname, quota in (item.value.quotas|d({}, true)).iteritems() %}
+    alter user {{ item.key }} quota {{ quota }} on {{ tsname }};
+    {% endfor %}
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  with_dict: "{{ oracle_users }}"
+  when: item.key|upper not in sqlplus_users_res.stdout_lines
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: (dbobjects) get list of dblinks from DB
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    select substr(db_link, 1, instr(db_link, '.') - 1) from dba_db_links;
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  register: sqlplus_links_res
+  changed_when: false
+  check_mode: false
+
+# creating only public links for now
+- name: (dbobjects) create missed dblinks
+  shell: |
+    {{ sqlplus_cmd }} <<SQLEND
+    {{ sqlplus_setup }}
+    create public database link {{ item.key }}
+      connect to {{ item.value.user | default('link_' + oracle_sid) }}
+      identified by "{{ item.value.pass | default(oracle_link_vault[ oracle_sid + '-' + item.key ] ) }}"
+      using '{{ item.value.target | default( item.key ) }}';
+    exit
+    SQLEND
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+    ORACLE_SID:  "{{ oracle_sid }}"
+  become_user: "{{ oracle_user }}"
+  with_dict: "{{ oracle_dblinks }}"
+  when: item.key|upper not in sqlplus_links_res.stdout_lines
+
+# also:
+# - stored procedures ("db_buh_grants" for 1c, saved to host_files/1c-db/grants_automation.sql)
+# - scheduler objects (same location)
+# could be implemented with per-object script if dba_objects misses object_name

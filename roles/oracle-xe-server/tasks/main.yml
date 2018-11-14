@@ -1,0 +1,18 @@
+---
+- include: checks.yml
+- include: sysconf.yml
+- include: software.yml
+  when: not oracle_soft_already_installed
+
+- include: listener.yml
+
+- include: database.yml
+  when: oracle_db_create and not oracle_db_already_created
+
+- include: dbtune.yml
+  when: oracle_db_create or oracle_db_already_created
+
+- include: logging.yml
+
+- include: dbobjects.yml
+  tags: dbobjects

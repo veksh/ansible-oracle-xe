@@ -1,0 +1,125 @@
+---
+# vars, mostly to be moved into group or host
+
+# fixed for XE
+oracle_base: /u01/app/oracle
+oracle_version: 11.2.0
+oracle_user: oracle
+oracle_group: dba
+oracle_dba_group: "{{ oracle_group }}"
+oracle_home: "{{ oracle_base }}/product/{{ oracle_version }}/xe"
+oracle_sid: "XE"
+oracle_base_vg: "apps"
+oracle_base_lv: "ora-apps"
+
+oracle_listener_iface: '{{ ansible_default_ipv4.interface }}'
+oracle_listener_ip: "{{ hostvars[inventory_hostname]['ansible_' + oracle_listener_iface]['ipv4']['address'] }}"
+oracle_db_clients:
+  - 10.1.11.0/24
+
+oracle_pam_limits:
+  nproc:   16384
+  nofile:  65636
+  rss:     "{{ ((0.9 * ansible_memtotal_mb)*1024)|round|int}}"
+  memlock: "{{ ((0.9 * ansible_memtotal_mb)*1024)|round|int}}"
+
+# mostly set by suse oracle script
+oracle_kernel_params:
+  kernel.sem: "250 32000 100 128"
+  kernel.shmall:      4294967296
+  kernel.shmmax:     68719476736
+  kernel.shmmni:            4096
+  fs.file-max:           6815744
+  fs.aio-max-nr:         1048576
+  net.ipv4.ip_local_port_range: "9000 65500"
+  net.core.rmem_default:  262144
+  net.core.rmem_max:     4194304
+  net.core.wmem_default:  262144
+  net.core.wmem_max:     1048576
+
+oracle_grub_params:
+  transparent_hugepages: never
+  elevator: none
+
+oracle_dba_users:
+  - localadmin
+
+# for tnsnames.ora; must be group vars
+oracle_servers: {}
+# service name aka global db name; fixed as "XE" for now
+oracle_service_name: "XE"
+# usually at service iface (oracle_listener_iface)
+oracle_host_name: "{{ ansible_hostname }}"
+# short alias for tnsnames
+oracle_external_alias: "{{ ansible_hostname }}"
+oracle_db_create: true
+oracle_db_already_created: false
+oracle_start_listener: false
+oracle_data_fs: "{{ oracle_base }}/oradata"
+oracle_data_dir: "{{ oracle_data_fs }}/XE"
+oracle_data_minfree_gb: 5
+
+# really must be in vault
+oracle_password_sys: "{{ oracle_pass_vault['sys'] }}"
+
+oracle_nls_language: AMERICAN
+oracle_nls_territory: RUSSIA
+
+oracle_history_retention_days: 7
+# not really used for XE, params are explicity set in dbtune task
+oracle_db_init_params:
+  recyclebin:     {value: "off", scope: "spfile"}
+  shared_servers: {value: "0", type: "number"}
+  dispatchers:    {value: ""}
+
+oracle_default_ts: "users"
+
+# db objects: roles
+# dict: key is role name, values are empty (for tagging role) or list of grants
+# no admin option or "identified by" yet
+oracle_roles_ges:
+  appuser:
+  appholder:
+    - create table
+    - create procedure
+    - create sequence
+    - create view
+    - create type
+    - create trigger
+    - create dimension
+    - create materialized view
+    - create operator
+    - create synonym
+
+oracle_roles: "{{ oracle_roles_ges }}"
+
+# db objects: users
+# dict: key is user name, values are
+# - password: mandatory
+#   - use 'lookup' to create random if required
+#   - default: oracle_pass_vault[username]
+# - roles: list of granted roles (no admin option or password yet)
+# - quotas: dict of ts_name => quota (need 'create table' priv to use)
+# - grants: dict of grant string => option ('admin', 'grant')
+#   - default option is none: key is like "select on otheruser.table:"
+oracle_passgen_opts: ".{{ oracle_external_alias }}.pass.out length=10 chars=ascii_letters,digits"
+oracle_users_example:
+  gesmail:
+    password: "{{ lookup('password', 'creds/' + 'gesmail' + oracle_passgen_opts) }}"
+    roles:
+      - appholder
+    quotas:
+      users: 2048M
+    grants:
+      create session:
+
+oracle_users: {}
+
+# mosty to limit cpu per call (in 1/10 s, so 9000 means "900 seconds")
+oracle_profiles_timelimit:
+  timelimit:
+    cpu_per_call: 9000
+
+oracle_profiles: "{{ oracle_profiles_timelimit }}"
+
+oracle_dblinks: {}

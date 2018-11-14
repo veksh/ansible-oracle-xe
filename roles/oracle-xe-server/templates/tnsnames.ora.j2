@@ -1,0 +1,43 @@
+# local listener
+listener =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = {{ oracle_host_name }})(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = {{ oracle_service_name }})
+    )
+  )
+
+# local service
+{{ oracle_service_name }} =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = {{ oracle_host_name }})(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = {{ oracle_service_name }})
+    )
+  )
+
+# short local name
+{{ oracle_external_alias }} =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = {{ oracle_host_name }})(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = {{ oracle_service_name }})
+    )
+  )
+
+# remote DBs
+{% for dbname, dbprops in oracle_servers.iteritems()|sort %}
+{{ dbname }} =
+  (DESCRIPTION =
+    (ADDRESS_LIST =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = {{ dbprops.host }})(PORT = 1521))
+    )
+    (CONNECT_DATA =
+      (SERVICE_NAME = {{ dbprops.service }})
+    )
+  )
+
+{% endfor %}

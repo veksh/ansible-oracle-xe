@@ -1,0 +1,8 @@
+# dead client probe interval (minutes)
+SQLNET.EXPIRE_TIME = 5
+# timeout for cleint to send/receive data (seconds)
+# on client: effectively largest possible query time
+#SQLNET.RECV_TIMEOUT = 60
+#SQLNET.SEND_TIMEOUT = 60
+# move NI errors from alert.log to $ORACLE_HOME/network/log/sqlnet.log
+DIAG_ADR_ENABLED=OFF

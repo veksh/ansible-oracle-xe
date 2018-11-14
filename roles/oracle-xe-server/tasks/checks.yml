@@ -1,0 +1,44 @@
+# assume that disks are managed by hostconf and LVM conf is in dict format
+- name: (checks) check that system meet min requirements
+  assert:
+    that:
+      - ansible_memory_mb >= 1024
+      - lvm_groups_dict[oracle_base_vg].lvs[oracle_base_lv].size >= '2G'
+
+- name: (checks) check that oracle base dir exists
+  stat:
+    path: "{{ oracle_base }}"
+  register: basedir_check_res
+  failed_when: not basedir_check_res.stat.exists
+
+# mb {{ oracle_inventory_loc }}/ContentsXML/inventory.xml would be better
+- name: (checks) check if oracle is not yet installed in this home
+  stat:
+    path: "{{ oracle_home }}/bin/sqlplus"
+  register: sqlplus_file_res
+
+- name: (checks) check if database is already created
+  shell: "grep '{{ oracle_sid }}:{{ oracle_home }}' /etc/oratab | wc -l"
+  register: db_exist_res
+  changed_when: false
+  check_mode: false
+
+- name: (checks) check enabled swap size
+  shell: "free | awk '/Swap:/ {print int($2/1024)}'"
+  register: swap_check_res
+  changed_when: false
+  check_mode: false
+
+- name: (checks) set facts after checks
+  set_fact:
+    oracle_soft_already_installed: "{{ sqlplus_file_res.stat.exists }}"
+    oracle_db_already_created: "{{ db_exist_res.stdout == '1' }}"
+    enabled_swap_size: "{{ swap_check_res.stdout | int }}"
+
+- name: (checks) check data space available
+  shell: "df -P {{ oracle_data_fs }} | awk 'END { print $4 }'"
+  register: data_space_res
+  failed_when: "data_space_res.stdout|int < oracle_data_minfree_gb*1024*1024"
+  changed_when: false
+  check_mode: false
+  when: not oracle_db_already_created

@@ -1,0 +1,35 @@
+- name: (database) prepare db creation responce file
+  template:
+    src:  "oracle-xe.rsp.j2"
+    dest: "{{ oracle_data_fs }}/xe.rsp"
+    owner: "root"
+    group: "{{ oracle_group }}"
+    mode: "0660"
+  no_log: true
+
+- name: (database) create XE database
+  shell: /etc/init.d/oracle-xe configure responseFile={{ oracle_data_fs }}/xe.rsp
+  register: db_create_res
+  failed_when: "'Installation completed successfully' not in db_create_res.stdout"
+
+- name: (database) print db creation results
+  debug:
+    var: db_create_res
+
+- name: (database) remove db creation responce file
+  file:
+    path: "{{ oracle_data_fs }}/xe.rsp"
+    state: absent
+
+# /u01/app/oracle/product/11.2.0/xe/config/log/
+# some errors seem to be inevitable: 01109, 31112 and are observed
+#- name: (database) check for errors in db creation logs
+#  shell: "grep ORA- {{ oracle_base }}/product/11.2.0/xe/config/log/*.log"
+#  register: creation_err_check_res
+#  failed_when: creation_err_check_res|success
+
+- name: (database) set up oratab to autostart {{ oracle_sid }}
+  lineinfile:
+    dest:   /etc/oratab
+    regexp: "^{{ oracle_sid }}"
+    line:    "{{ oracle_sid }}:{{ oracle_home }}:Y"

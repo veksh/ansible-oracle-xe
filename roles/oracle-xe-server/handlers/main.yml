@@ -1,0 +1,4 @@
+---
+
+- name: reload firewall rules
+  command: "{{ fw_reload_script }} {{ oracle_listener_iface }}"

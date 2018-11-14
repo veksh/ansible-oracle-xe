@@ -1,0 +1,52 @@
+- name: (listener) create listener.ora
+  template:
+    src:  "listener.ora.j2"
+    dest: "{{ oracle_home }}/network/admin/listener.ora"
+    owner: "{{ oracle_user }}"
+    group: "{{ oracle_group }}"
+
+- name: (listener) copy sqlnet.ora
+  copy:
+    src:  "sqlnet.ora"
+    dest: "{{ oracle_home }}/network/admin/sqlnet.ora"
+    owner: "{{ oracle_user }}"
+    group: "{{ oracle_group }}"
+
+- name: (listener) create tnsnames.ora
+  template:
+    src:  "tnsnames.ora.j2"
+    dest: "{{ oracle_home }}/network/admin/tnsnames.ora"
+    owner: "{{ oracle_user }}"
+    group: "{{ oracle_group }}"
+
+- name: (listener) check if listener is running
+  shell: "{{ oracle_home }}/bin/lsnrctl status"
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+  become_user: "{{ oracle_user }}"
+  register: listener_check_res
+  failed_when: false
+  changed_when: false
+  check_mode: false
+  when: oracle_start_listener
+
+- name: (listener) start listener
+  shell: "{{ oracle_home }}/bin/lsnrctl start"
+  environment:
+    ORACLE_BASE: "{{ oracle_base }}"
+    ORACLE_HOME: "{{ oracle_home }}"
+  become_user: "{{ oracle_user }}"
+  when:
+    - oracle_start_listener
+    - |
+      'TNS:no listener' in listener_check_res.stdout or
+      'Linux Error: 111: Connection refused' in listener_check_res.stdout"
+
+- name: (listener) wait for listener to listen
+  wait_for:
+    host: "{{ oracle_listener_ip }}"
+    port: 1521
+    state: started
+    timeout: 5
+  when: oracle_start_listener

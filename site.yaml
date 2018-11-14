@@ -1,0 +1,7 @@
+# ansible-playbook site-m0.yaml -l orepl-m0-vm --tags oracle-xe --diff
+- hosts: oracle-xe-servers
+  become: true
+  roles:
+    - oracle-xe-server
+  tags:
+    - oracle-xe

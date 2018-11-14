@@ -1,0 +1,31 @@
+- name: (software) create temp swap
+  command: dd if=/dev/zero of={{ oracle_data_fs }}/tempswap bs=1M count=2100
+  args:
+    creates: "{{ oracle_data_fs }}/tempswap"
+  register: oracle_swap_creation_res
+  when: enabled_swap_size|int < 2048
+
+- name: (software) init temp swap
+  command: mkswap {{ oracle_data_fs }}/tempswap
+  when: not oracle_swap_creation_res.skipped|d(false)
+
+- name: (software) enable temp swap
+  command: swapon {{ oracle_data_fs }}/tempswap
+  when: not oracle_swap_creation_res.skipped|d(false)
+
+- name: (sysconf) install oracle xe package
+  zypper:
+    name: "{{ item }}"
+    state: installed
+  with_items:
+    - oracle-xe
+
+- name: (software) disable temp swap
+  command: swapoff {{ oracle_data_fs }}/tempswap
+  when: not oracle_swap_creation_res.skipped|d(false)
+
+- name: (software) remove temp swap
+  file:
+    path: "{{ oracle_data_fs }}/tempswap"
+    state: absent
+  when: not oracle_swap_creation_res.skipped|d(false)

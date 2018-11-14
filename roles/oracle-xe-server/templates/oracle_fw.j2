@@ -1,0 +1,6 @@
+### {{ ansible_managed }}
+
+## allow access to db
+{% for client in oracle_db_clients %}
+{{ oracle_listener_iface }}  service  tcp  1521  {{ client }}
+{% endfor %}
