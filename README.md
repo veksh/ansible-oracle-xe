@@ -18,6 +18,7 @@ Features: what does that role do
     - re-create redo logs in data dir with custom size, add 3rd log file
     - modify init params: turn off recycle bin, turn on audit, etc
     - drop APEX and example schemes from db, create missed DBSNMP user
+    - assign random password for sys
     - disable password expiration
     - re-schedule nightly maintenance jobs to custom window
     - turn on DB audit on interesting events, create DB audit trail auto-purge task
