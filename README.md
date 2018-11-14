@@ -40,23 +40,14 @@ Requirements
 - Usual Oracle XE system requirements (see below for VM config)
 - Currently tested on SLES, could work on other distributions with some modifications.
 
-Steps to create "orepl-xe" on orepl-xe-vm
-=========================================
+Example steps to install XE in VM
+=================================
 
-Somewhat site-specific
+- add to inventory
 
-- create/clone VM for oracle db (on cageX)
-    - 1-2 cpus, 2-4 GB (XE uses 1 cpu and 1 GB)
-    - 2nd net card in srv-oracle
-    - sys: on usual app.sys
-    - apps: on apps.data, 20G for ora soft + system + data
-- add to m0 inventory.cfg
-
-        [all-m0]
-        orepl-xe-vm   ansible_ssh_host=orepl-xe-vm.example-domain.com
         # ...
         [oracle-xe-servers]
-        orepl-xe-vm
+        orepl-xe-vm   ansible_ssh_host=orepl-xe-vm.example-domain.com
 
 - add to site.yaml playbook
 
@@ -67,42 +58,7 @@ Somewhat site-specific
           tags:
             - oracle-xe
 
-- create `host_vars/orepl-xe-vm.yaml` or dir with host vars
-
-        iface_configs:
-          - iface: eth1
-            name: orepl-xe.example-domain.com
-            ip_cidr: 10.0.53.20/24
-
-        extra_system_groups:
-          - dba
-
-        extra_system_users:
-          oracle: {group: "dba", groups: "trusted", desc: "oracle user"}
-
-        lvm_groups_dict:
-          apps:
-            pvs: /dev/sdb
-            path: /u01/app/oracle
-            owner: oracle
-            group: dba
-            mode: ug+rwx,o+rx
-            def_fs: xfs
-            def_opts: nosuid,noexec,nodev
-            def_owner: oracle
-            def_group: dba
-            def_mode: ug+rwx,o=rx
-            lvs:
-              # not "soft" at "product" but "/": oracle install scripts check for free space in /u01/app
-              ora-apps:  {size:  2G, path: "/u01/app/oracle", opts: "nodev"}
-              ora-diag:  {size:  1G, path: "diag"}
-              ora-data:  {size: 20G, path: "oradata", mode: "u=rwx,g=rx,o-rwx"}
-
-- conf it with hostconf; change root password
-
-        ansible-playbook site.yaml -l orepl-xe-vm --tags hostconf --diff
-
-- create `host_vars/orepl-xe-vm/oracle.yaml` and pass vault, or add directly to host_vars
+- create `host_vars/orepl-xe-vm.yaml` 
 
         ## oracle vars
         oracle_listener_iface: eth1
