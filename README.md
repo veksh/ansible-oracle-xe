@@ -40,7 +40,7 @@ Requirements
 - Usual Oracle XE system requirements (see below for VM config)
 - Currently tested on SLES, could work on other distributions with some modifications.
 
-Steps to create "orepl-m0" on orepl-m0-vm
+Steps to create "orepl-xe" on orepl-xe-vm
 =========================================
 
 Somewhat site-specific
@@ -53,12 +53,12 @@ Somewhat site-specific
 - add to m0 inventory.cfg
 
         [all-m0]
-        orepl-m0-vm   ansible_ssh_host=orepl-m0-vm.m0.example-domain.com
+        orepl-xe-vm   ansible_ssh_host=orepl-xe-vm.example-domain.com
         # ...
         [oracle-xe-servers]
-        orepl-m0-vm
+        orepl-xe-vm
 
-- add to site-m0.yml playbook
+- add to site.yaml playbook
 
         - hosts: oracle-xe-servers
           become: true
@@ -67,11 +67,11 @@ Somewhat site-specific
           tags:
             - oracle-xe
 
-- create `host_vars/1c-db/main.yaml`
+- create `host_vars/orepl-xe-vm.yaml` or dir with host vars
 
         iface_configs:
           - iface: eth1
-            name: orepl-m0.m0.example-domain.com
+            name: orepl-xe.example-domain.com
             ip_cidr: 10.0.53.20/24
 
         extra_system_groups:
@@ -100,9 +100,9 @@ Somewhat site-specific
 
 - conf it with hostconf; change root password
 
-        ansible-playbook site-m0.yaml -l orepl-m0 --tags hostconf --diff
+        ansible-playbook site.yaml -l orepl-xe-vm --tags hostconf --diff
 
-- create `host_vars/orepl-m0/oracle.yaml` and pass vault, or add directly to host_vars
+- create `host_vars/orepl-xe-vm/oracle.yaml` and pass vault, or add directly to host_vars
 
         ## oracle vars
         oracle_listener_iface: eth1
@@ -131,7 +131,7 @@ Somewhat site-specific
 
 - create db and objects
 
-        ansible-playbook site-m0.yaml -l orepl-m0 --tags oracle-xe --diff
+        ansible-playbook site.yaml -l orepl-xe-vm --tags oracle-xe --diff
 
 - ext: add to backup and monitoring
 - ext: add to tnsnames
