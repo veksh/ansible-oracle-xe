@@ -10,13 +10,6 @@
     groups: ["trusted"]
     system: true
 
-# depends on "ypbind" by default
-- name: (sysconf) fix oracle init script
-  lineinfile:
-    dest: "/etc/init.d/oracle-xe"
-    regexp: "^# Required-Start:"
-    line:    "# Required-Start: $local_fs $remote_fs $network"
-
 # hard-coded vars, owned by orarun (may be overwriten on (not highly probable) next update)
 - name: (sysconf) replace /etc/profile.d/oracle.sh
   template:

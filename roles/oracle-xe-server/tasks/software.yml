@@ -29,3 +29,10 @@
     path: "{{ oracle_data_fs }}/tempswap"
     state: absent
   when: not oracle_swap_creation_res.skipped|d(false)
+
+# depends on "ypbind" by default
+- name: (software) fix oracle init script
+  lineinfile:
+    dest: "/etc/init.d/oracle-xe"
+    regexp: "^# Required-Start:"
+    line:    "# Required-Start: $local_fs $remote_fs $network"
